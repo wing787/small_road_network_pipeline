@@ -1,0 +1,48 @@
+[project]
+name = "roadnet"
+version = "0.1.0"
+description = "MVP pipeline: download, convert and merge 国土数値情報 N13-2024 road data into a single GeoParquet."
+readme = "README.md"
+authors = [
+    { name = "Tsubasa Moriguchi", email = "wing787tsubasa.m@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "geopandas>=1.1.4",
+    "httpx>=0.28.1",
+    "pyarrow>=25.0.0",
+    "pydantic-settings>=2.14.2",
+    "pyogrio>=0.13.0",
+]
+
+[project.scripts]
+roadnet = "roadnet.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.11.3,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "mypy>=2.2.0",
+    "pytest>=9.1.1",
+    "ruff>=0.15.21",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+# geopandas / pyogrio ship no (or partial) type stubs; silence "missing import" noise.
+[[tool.mypy.overrides]]
+module = ["geopandas.*", "pyogrio.*", "shapely.*", "pyarrow.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
