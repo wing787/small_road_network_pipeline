@@ -135,13 +135,16 @@ def convert_zip_to_parquet(zip_path: Path, parts_dir: Path) -> Path:
     if epsg != EXPECTED_EPSG:
         logger.warning(
             "mesh %s: CRS EPSG:%s differs from expected EPSG:%s",
-            mesh_code, epsg, EXPECTED_EPSG,
+            mesh_code,
+            epsg,
+            EXPECTED_EPSG,
         )
 
     invalid = count_invalid_geometries(gdf)
     if invalid:
-        logger.warning("mesh %s: %d invalid/empty/missing geometries (not repaired)",
-                       mesh_code, invalid)
+        logger.warning(
+            "mesh %s: %d invalid/empty/missing geometries (not repaired)", mesh_code, invalid
+        )
 
     normalized = normalize_roads(gdf, mesh_code)
 

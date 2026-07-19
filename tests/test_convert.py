@@ -1,4 +1,4 @@
-"""Tests for the pure transform logic in convert.py (no network, no real data)."""
+"""convert.py の純粋な変換ロジックのテスト（ネットワークなし・実データなし）。"""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from roadnet.convert import (
 
 
 def _sample_roads() -> gpd.GeoDataFrame:
-    """A tiny synthetic mesh shaped like the real N13 GeoJSON."""
+    """実際の N13 GeoJSON と同じ形をした小さな合成メッシュ。"""
     return gpd.GeoDataFrame(
         {
             "N13_001": ["2018-10-05", "2019-01-01"],
@@ -33,12 +33,12 @@ def test_normalize_renames_columns_and_tags_source_mesh() -> None:
     gdf = _sample_roads()
     out = normalize_roads(gdf, mesh_code="3622")
 
-    assert "road_type" in out.columns          # N13_002 -> road_type
+    assert "road_type" in out.columns  # N13_002 -> road_type
     assert "registration_date" in out.columns  # N13_001 -> registration_date
     assert "secondary_mesh_code" in out.columns  # N13_008
     assert "N13_002" not in out.columns
     assert (out[SOURCE_MESH_COLUMN] == "3622").all()
-    assert len(out) == len(gdf)  # normalization must not drop rows
+    assert len(out) == len(gdf)  # 正規化で行が落ちてはならない
 
 
 def test_normalize_leaves_unknown_columns_untouched() -> None:
@@ -49,13 +49,11 @@ def test_normalize_leaves_unknown_columns_untouched() -> None:
 
 
 def test_count_invalid_detects_bad_geometries() -> None:
-    bowtie = Polygon([(0, 0), (1, 1), (1, 0), (0, 1)])  # self-intersecting -> invalid
+    bowtie = Polygon([(0, 0), (1, 1), (1, 0), (0, 1)])  # 自己交差 -> 不正ジオメトリ
     good = LineString([(0, 0), (1, 1)])
     empty = LineString()
-    gdf = gpd.GeoDataFrame(
-        {"geometry": [good, bowtie, empty, None]}, crs="EPSG:6668"
-    )
-    # bowtie (invalid) + empty + None => 3 flagged; the good line is not.
+    gdf = gpd.GeoDataFrame({"geometry": [good, bowtie, empty, None]}, crs="EPSG:6668")
+    # bowtie（不正）+ empty + None => 3件が検出対象。正常なラインは含まれない。
     assert count_invalid_geometries(gdf) == 3
 
 
