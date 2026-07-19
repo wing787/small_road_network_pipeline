@@ -8,11 +8,14 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "geoalchemy2>=0.20.0",
     "geopandas>=1.1.4",
     "httpx>=0.28.1",
+    "psycopg[binary]>=3.3.4",
     "pyarrow>=25.0.0",
     "pydantic-settings>=2.14.2",
     "pyogrio>=0.13.0",
+    "sqlalchemy>=2.0.51",
 ]
 
 [project.scripts]
