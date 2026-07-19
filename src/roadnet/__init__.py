@@ -1,6 +1,6 @@
-"""roadnet: MVP pipeline for 国土数値情報 道路データ N13-2024.
+"""roadnet: 国土数値情報 道路データ N13-2024 の MVP パイプライン。
 
-Download mesh zips -> convert each to GeoParquet -> merge into one GeoParquet.
+メッシュ zip をダウンロード → 各 zip を GeoParquet に変換 → 1つの GeoParquet に結合。
 """
 
 __all__ = ["__version__"]

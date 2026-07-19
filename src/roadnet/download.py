@@ -1,8 +1,8 @@
-"""I/O layer: download mesh zips.
+"""I/O 層: メッシュ zip のダウンロード。
 
-Pure network + filesystem side effects live here, kept out of the transform
-layers so those stay unit-testable. Downloads are idempotent: an existing,
-non-empty file is left untouched.
+ネットワークとファイルシステムの副作用はこのモジュールに閉じ込め、変換層を
+ユニットテスト可能に保つ。ダウンロードは冪等: 既存の空でないファイルは
+再取得せずそのまま使う。
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 def filename_from_url(url: str) -> str:
-    """Return the trailing filename component of a URL (e.g. ``N13-24_3622_GEOJSON.zip``)."""
+    """URL の末尾のファイル名部分を返す（例: ``N13-24_3622_GEOJSON.zip``）。"""
     name = Path(urlparse(url).path).name
     if not name:
         raise ValueError(f"Cannot derive a filename from URL: {url!r}")
@@ -33,10 +33,10 @@ def download_one(
     timeout_seconds: float,
     client: httpx.Client | None = None,
 ) -> tuple[Path, bool]:
-    """Download ``url`` into ``dest_dir`` if not already present.
+    """``url`` を ``dest_dir`` にダウンロードする（既存ならスキップ）。
 
-    Returns ``(path, downloaded)`` where ``downloaded`` is ``False`` when an
-    existing non-empty file was reused (idempotent skip).
+    ``(path, downloaded)`` を返す。既存の空でないファイルを再利用した場合
+    （冪等スキップ）、``downloaded`` は ``False``。
     """
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest = dest_dir / filename_from_url(url)
@@ -55,8 +55,9 @@ def download_one(
         logger.info("GET %s", url)
         resp = client.get(url)
         resp.raise_for_status()
-        # Write atomically via a temp sibling so a crash never leaves a
-        # half-written file that the idempotency check would wrongly "skip".
+        # 一時ファイル経由でアトミックに書き込む。途中でクラッシュしても
+        # 書きかけのファイルが残らず、冪等スキップが誤って「完了」と
+        # 判定することがない。
         tmp = dest.with_suffix(dest.suffix + ".part")
         tmp.write_bytes(resp.content)
         tmp.replace(dest)
@@ -75,9 +76,9 @@ def download_all(
     timeout_seconds: float,
     sleep_seconds: float,
 ) -> list[Path]:
-    """Download every URL, sleeping between *actual* network requests.
+    """全 URL をダウンロードする。*実際に* 通信したときだけ間に sleep を挟む。
 
-    Skipped (already-present) files do not incur a sleep.
+    スキップ（取得済み）のファイルでは sleep しない。
     """
     paths: list[Path] = []
     with httpx.Client(
@@ -94,8 +95,8 @@ def download_all(
                 client=client,
             )
             paths.append(path)
-            # Be polite to the source server: pause only after a real fetch and
-            # only if more URLs remain.
+            # 配布元サーバーへの配慮: 実際に取得した直後、かつ後続の URL が
+            # 残っている場合のみ待つ。
             if downloaded and sleep_seconds > 0 and i < len(urls) - 1:
                 time.sleep(sleep_seconds)
     return paths

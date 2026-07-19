@@ -1,27 +1,28 @@
-"""Merge layer: stream per-mesh GeoParquet parts into merged outputs.
+"""結合層: メッシュ単位の GeoParquet パートをストリーミングで結合出力する。
 
-Two output formats are produced from the same ``parts/*.parquet``:
+同じ ``parts/*.parquet`` から2つの形式を出力する:
 
-- **GeoParquet** (``merge_parts``): a single ``pyarrow.parquet.ParquetWriter``
-  writes parts one at a time — we never concatenate every part into memory.
-  The writer adopts the *first* part's schema, including its GeoParquet ``geo``
-  metadata, so the output is readable by ``geopandas.read_parquet``.
-- **FlatGeobuf** (``merge_parts_to_flatgeobuf``): parts are read one at a time
-  and appended via ``pyogrio.write_dataframe(append=True)``. Verified against
-  pyogrio 0.13 / GDAL 3.12: append works and the packed spatial index is
-  present after appends (``fast_spatial_filter`` capability, bbox queries).
+- **GeoParquet**（``merge_parts``）: 単一の ``pyarrow.parquet.ParquetWriter``
+  でパートを1つずつ書き込む — 全パートをメモリ上で連結することはしない。
+  writer は*最初の*パートのスキーマ（GeoParquet の ``geo`` メタデータ含む）を
+  採用するため、出力は ``geopandas.read_parquet`` で読める。
+- **FlatGeobuf**（``merge_parts_to_flatgeobuf``）: パートを1つずつ読み、
+  ``pyogrio.write_dataframe(append=True)`` で追記する。pyogrio 0.13 /
+  GDAL 3.12 で検証済み: append は動作し、追記後もパック済み空間インデックス
+  が保持される（``fast_spatial_filter`` ケーパビリティ、bbox クエリ）。
 
-Streaming rule (important for the real "millions of features" case): at most
-one part is held in memory at a time, for either format.
+ストリーミング原則（実運用の「数百万フィーチャ」ケースで重要）: どちらの
+形式でも、メモリ上に保持するパートは常に最大1つ。
 
-Known limitations:
+既知の制限:
 
-- GeoParquet: the ``geo`` metadata (notably ``bbox``) is copied verbatim from
-  the first part, so the merged file's advertised bbox covers only that mesh,
-  not the full extent. See README.
-- FlatGeobuf: GDAL's append may internally rebuild the file (index re-sort),
-  so with many parts the total write cost can grow super-linearly. Fine at MVP
-  scale; revisit before merging thousands of parts / tens of millions of rows.
+- GeoParquet: ``geo`` メタデータ（特に ``bbox``）は最初のパートからそのまま
+  コピーされるため、結合ファイルの bbox はそのメッシュの範囲しか示さず、
+  全体の範囲にならない。README 参照。
+- FlatGeobuf: GDAL の append は内部でファイルを再構築（インデックスの
+  再ソート）することがあり、パート数が多いと総書き込みコストが線形以上に
+  増えうる。MVP スケールでは問題ないが、数千パート／数千万行を結合する
+  前に再検討すること。
 """
 
 from __future__ import annotations
@@ -39,34 +40,35 @@ logger = logging.getLogger(__name__)
 
 
 # --------------------------------------------------------------------------- #
-# Pure helper (no I/O — unit-testable)                                         #
+# 純粋なヘルパー（I/O なし — ユニットテスト可能）                                #
 # --------------------------------------------------------------------------- #
 def find_cross_mesh_duplicates(
     gdf: gpd.GeoDataFrame, mesh_col: str = SOURCE_MESH_COLUMN
 ) -> gpd.GeoDataFrame:
-    """Return rows whose geometry appears under more than one distinct mesh.
+    """同一ジオメトリが複数の異なるメッシュに現れる行を返す。
 
-    N13 features have no stable global id, so we key on geometry (WKB) to detect
-    the same road line delivered by two adjacent mesh files. Returns the subset
-    of ``gdf`` (possibly empty) involved in such cross-mesh duplication.
+    N13 のフィーチャには安定したグローバル ID がないため、隣接する2つの
+    メッシュファイルが同じ道路ラインを重複して含むケースをジオメトリ（WKB）
+    をキーに検出する。そうしたメッシュ跨ぎ重複に関与する ``gdf`` の部分集合
+    （空になりうる）を返す。
     """
     if len(gdf) == 0:
         return gdf.iloc[0:0]
     wkb = gdf.geometry.apply(lambda g: None if g is None else g.wkb)
-    # Count distinct meshes per geometry key; keep rows sharing a geom across >1 mesh.
+    # ジオメトリキーごとに異なるメッシュ数を数え、2メッシュ以上で共有される行を残す。
     distinct = gdf.assign(_wkb=wkb).groupby("_wkb")[mesh_col].transform("nunique")
     mask = distinct > 1
     return gdf[mask.to_numpy()]
 
 
 # --------------------------------------------------------------------------- #
-# Streaming merge (I/O)                                                        #
+# ストリーミング結合（I/O）                                                     #
 # --------------------------------------------------------------------------- #
 def merge_parts(part_paths: list[Path], output_path: Path) -> int:
-    """Stream-merge parquet parts into one file. Returns total rows written.
+    """parquet パートを1ファイルにストリーム結合する。総書き込み行数を返す。
 
-    The first part's Arrow schema (with GeoParquet ``geo`` metadata) is used for
-    the whole output; later parts are cast to it before writing.
+    最初のパートの Arrow スキーマ（GeoParquet の ``geo`` メタデータ含む）を
+    出力全体に使い、以降のパートは書き込み前にそのスキーマへキャストする。
     """
     if not part_paths:
         raise ValueError("No parts to merge.")
@@ -81,8 +83,8 @@ def merge_parts(part_paths: list[Path], output_path: Path) -> int:
             if writer is None:
                 writer = pq.ParquetWriter(output_path, table.schema)
             else:
-                # Align column types to the first part; also drops per-part
-                # schema metadata so we keep the first part's `geo` block.
+                # カラム型を最初のパートに揃える。パートごとのスキーマ
+                # メタデータも落ちるため、最初のパートの `geo` ブロックが保たれる。
                 table = table.cast(writer.schema)
             writer.write_table(table)
             total_rows += table.num_rows
@@ -96,19 +98,18 @@ def merge_parts(part_paths: list[Path], output_path: Path) -> int:
 
 
 def merge_parts_to_flatgeobuf(part_paths: list[Path], output_path: Path) -> int:
-    """Stream-merge parquet parts into one FlatGeobuf. Returns total rows written.
+    """parquet パートを1つの FlatGeobuf にストリーム結合する。総書き込み行数を返す。
 
-    Parts are read one at a time (bounded memory) and appended with pyogrio's
-    FlatGeobuf driver. The first part creates the file; any pre-existing output
-    is removed first so re-runs stay deterministic instead of appending to the
-    previous result.
+    パートは1つずつ読み（メモリ使用量を抑制）、pyogrio の FlatGeobuf
+    ドライバで追記する。最初のパートがファイルを作成し、既存の出力は先に
+    削除する — 前回の結果に追記せず、再実行を決定的に保つため。
 
-    The resulting .fgb carries FlatGeobuf's built-in packed spatial index, so
-    QGIS and bbox-filtered reads work as expected.
+    出力される .fgb は FlatGeobuf 組み込みのパック済み空間インデックスを
+    持つため、QGIS や bbox フィルタ付き読み込みが期待どおり動く。
 
-    Note: GDAL's FGB append may rebuild the file internally on each append, so
-    write cost can grow super-linearly with the number of parts. Acceptable at
-    MVP scale (a few parts); see module docstring.
+    注: GDAL の FGB append は追記のたびに内部でファイルを再構築することが
+    あり、パート数に対して書き込みコストが線形以上に増えうる。MVP スケール
+    （数パート）では許容範囲。モジュール docstring 参照。
     """
     if not part_paths:
         raise ValueError("No parts to merge.")

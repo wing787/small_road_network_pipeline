@@ -1,7 +1,8 @@
-"""Command-line entrypoint: download / convert / merge / all.
+"""コマンドラインエントリポイント: download / convert / merge / load / all。
 
-Thin orchestration over the layer modules. Each subcommand is idempotent and
-can be run independently.
+各層モジュールの薄いオーケストレーション。各サブコマンドは冪等で、単独でも
+実行できる。``load`` は到達可能な PostGIS（compose.yaml 参照）を必要とする
+ため、``all`` には含めていない。
 """
 
 from __future__ import annotations
@@ -71,16 +72,19 @@ def cmd_all(settings: Settings) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="roadnet",
-        description="Download, convert and merge 国土数値情報 N13-2024 road data to GeoParquet.",
+        description=(
+            "国土数値情報 N13-2024 道路データをダウンロード・変換し GeoParquet に結合する。"
+        ),
     )
     parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Enable DEBUG logging."
+        "-v", "--verbose", action="store_true", help="DEBUG レベルのログを有効にする。"
     )
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("download", help="Download mesh zips (idempotent).")
-    sub.add_parser("convert", help="Convert each mesh zip to a GeoParquet part.")
-    sub.add_parser("merge", help="Stream-merge parts into one GeoParquet.")
-    sub.add_parser("all", help="Run download -> convert -> merge.")
+    sub.add_parser("download", help="メッシュ zip をダウンロードする（冪等）。")
+    sub.add_parser("convert", help="各メッシュ zip を GeoParquet パートに変換する。")
+    sub.add_parser("merge", help="パートを GeoParquet + FlatGeobuf にストリーム結合する。")
+    sub.add_parser("load", help="パートを PostGIS にストリーム投入する（DB の起動が必要）。")
+    sub.add_parser("all", help="download -> convert -> merge を実行する。")
     return parser
 
 

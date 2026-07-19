@@ -1,35 +1,34 @@
 # small_road_network_pipeline
 
-A **minimum working** data pipeline that downloads 国土数値情報 道路データ
-**N13-2024**, converts each mesh to **GeoParquet**, and stream-merges the parts
-into a single nationwide-style GeoParquet.
+国土数値情報 道路データ **N13-2024** をダウンロードし、メッシュごとに
+**GeoParquet** へ変換し、パートをストリーミング結合して全国版スタイルの
+GeoParquet 1ファイルにまとめる、**動く最小構成**のデータパイプライン。
 
-This is a learning / portfolio project. Scope is deliberately small: the target
-mesh URLs are hard-coded (no scraping), and the pipeline runs on 3 tiny meshes
-by default.
+学習・ポートフォリオ目的のプロジェクトです。スコープは意図的に小さく
+してあります: 対象メッシュの URL はハードコード（スクレイピングなし）で、
+デフォルトでは小さな3メッシュのみを処理します。
 
-## Data source / 出典
+## データ出典
 
 > 「国土数値情報（道路データ N13-2024）」（国土交通省）
 > https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-N13-2024.html
 >
-> This product uses the 国土数値情報 (National Land Numerical Information) and is
-> processed by the author. Redistribution of the data is subject to the
-> 国土数値情報 terms of use.
+> 本プロジェクトは国土数値情報を利用し、作者が加工したものです。
+> データの再配布は国土数値情報の利用規約に従います。
 
-**What the raw data looks like** (verified against real downloads, 2026-07):
+**元データの構造**（2026-07 に実ダウンロードで確認済み）:
 
-| Property | Value |
+| 項目 | 値 |
 | --- | --- |
-| Distribution unit | one zip per 1-次メッシュ (4-digit primary mesh) |
-| Contents of each zip | one `*.geojson` (UTF-8) + a `KS-META-*.xml` |
-| Geometry | `LineString` (road centerlines) |
-| CRS | **JGD2011 geographic, EPSG:6668** (lon/lat) |
-| Attributes | `N13_001` … `N13_008` (see mapping below) |
+| 配布単位 | 1次メッシュ（4桁）ごとに zip 1つ |
+| 各 zip の内容 | `*.geojson`（UTF-8）1つ + `KS-META-*.xml` |
+| ジオメトリ | `LineString`（道路中心線） |
+| CRS | **JGD2011 地理座標系、EPSG:6668**（経緯度） |
+| 属性 | `N13_001` … `N13_008`（下のマッピング参照） |
 
-Attribute mapping applied in `convert.py` (per the N13 product spec):
+`convert.py` で適用する属性マッピング（N13 製品仕様書に基づく）:
 
-| Source | Normalized name | Meaning |
+| 元カラム | 正規化後の名前 | 意味 |
 | --- | --- | --- |
 | `N13_001` | `registration_date` | データ登録日 |
 | `N13_002` | `road_type` | 種別 |
@@ -40,48 +39,51 @@ Attribute mapping applied in `convert.py` (per the N13 product spec):
 | `N13_007` | `toll_category` | 有料区分 |
 | `N13_008` | `secondary_mesh_code` | 二次メッシュ番号 |
 
-`convert.py` also adds a `source_mesh` column (the 4-digit mesh code taken from
-the zip filename) so every feature is traceable to its origin file.
+`convert.py` はさらに `source_mesh` カラム（zip ファイル名から取った4桁
+メッシュコード）を付与するため、すべてのフィーチャは由来ファイルまで
+追跡できます。
 
-### Default meshes
+### デフォルトのメッシュ
 
-The three smallest meshes nationwide are used by default (5–66 KB each), so the
-demo is fast and polite to the source server:
+全国でも最小クラスの3メッシュ（各 5〜66 KB）をデフォルトとし、デモを
+高速に、かつ配布元サーバーに負荷をかけないようにしています:
 
-| Mesh | URL | zip size | features |
+| メッシュ | URL | zip サイズ | フィーチャ数 |
 | --- | --- | --- | --- |
-| 3631 | `.../N13-24/N13-24_3631_GEOJSON.zip` | ~5 KB | 19 |
-| 3724 | `.../N13-24/N13-24_3724_GEOJSON.zip` | ~22 KB | 620 |
-| 3622 | `.../N13-24/N13-24_3622_GEOJSON.zip` | ~66 KB | 800 |
+| 3631 | `.../N13-24/N13-24_3631_GEOJSON.zip` | 約5 KB | 19 |
+| 3724 | `.../N13-24/N13-24_3724_GEOJSON.zip` | 約22 KB | 620 |
+| 3622 | `.../N13-24/N13-24_3622_GEOJSON.zip` | 約66 KB | 800 |
 
-Override the list via the `ROADNET_MESH_ZIP_URLS` env var or a `.env` file.
+リストは環境変数 `ROADNET_MESH_ZIP_URLS` または `.env` ファイルで
+上書きできます。
 
-## Install
+## インストール
 
-Requires **Python 3.12+** and [uv](https://docs.astral.sh/uv/).
+**Python 3.12+** と [uv](https://docs.astral.sh/uv/) が必要です。
 
 ```bash
 uv sync
 ```
 
-## Usage
+## 使い方
 
 ```bash
 uv run roadnet all         # download -> convert -> merge
-# or step by step:
-uv run roadnet download    # -> data/raw/*.zip     (idempotent; skips existing)
+# あるいはステップごとに:
+uv run roadnet download    # -> data/raw/*.zip     （冪等。既存ファイルはスキップ）
 uv run roadnet convert     # -> data/parts/*.parquet
 uv run roadnet merge       # -> data/output/roads_all.parquet + roads_all.fgb
+uv run roadnet load        # -> PostGIS テーブル `roads`（DB の起動が必要。後述）
 ```
 
-`merge` produces **two** outputs from the same parts:
+`merge` は同じパート群から **2種類** の出力を生成します:
 
-| File | Format | Why |
+| ファイル | 形式 | 理由 |
 | --- | --- | --- |
-| `data/output/roads_all.parquet` | GeoParquet | columnar analytics (DuckDB, pandas, cloud) |
-| `data/output/roads_all.fgb` | FlatGeobuf | built-in spatial index — QGIS streaming display, bbox-filtered reads |
+| `data/output/roads_all.parquet` | GeoParquet | 列指向の分析用途（DuckDB、pandas、クラウド） |
+| `data/output/roads_all.fgb` | FlatGeobuf | 空間インデックス内蔵 — QGIS でのストリーミング表示、bbox フィルタ読み込み |
 
-Read the results:
+結果の読み込み:
 
 ```python
 import geopandas as gpd
@@ -92,105 +94,153 @@ print(len(gdf), gdf.crs)   # 1439  EPSG:6668
 fgb = gpd.read_file("data/output/roads_all.fgb")
 print(len(fgb))            # 1439
 
-# FGB spatial index in action: read only features inside a bbox
+# FGB の空間インデックスの活用例: bbox 内のフィーチャだけを読む
 subset = gpd.read_file("data/output/roads_all.fgb", bbox=(122.9, 24.4, 123.0, 24.5))
 ```
 
-### Configuration
+### 設定
 
-All settings live in `src/roadnet/config.py` (pydantic-settings). Override with
-env vars prefixed `ROADNET_`, e.g.:
+すべての設定は `src/roadnet/config.py`（pydantic-settings）にあります。
+`ROADNET_` プレフィックス付きの環境変数で上書きできます。例:
 
 ```bash
 ROADNET_SLEEP_SECONDS=5 ROADNET_DATA_DIR=/tmp/roads uv run roadnet all
 ```
 
-Network behavior: a descriptive `User-Agent` is sent and requests are spaced by
-`sleep_seconds` (default 2 s) between *actual* downloads.
+ネットワーク挙動: 説明的な `User-Agent` を送信し、*実際に*ダウンロード
+した場合のみリクエスト間に `sleep_seconds`（デフォルト2秒）の間隔を
+空けます。
 
-## Architecture
+## アーキテクチャ
 
-I/O and pure transforms are separated at the function level so the transform
-logic is unit-testable with no network or files:
+I/O と純粋な変換を関数レベルで分離しているため、変換ロジックは
+ネットワークもファイルもなしでユニットテストできます:
 
 ```
 src/roadnet/
-  config.py    pydantic-settings: URLs, paths, sleep, timeout, User-Agent
-  download.py  I/O:        idempotent httpx download (skip existing)
-  convert.py   transform:  normalize_roads / count_invalid_geometries / crs_epsg
-               I/O:        read_mesh_zip (/vsizip) -> per-mesh GeoParquet
-  merge.py     transform:  find_cross_mesh_duplicates (pure helper)
-               I/O:        merge_parts (streaming ParquetWriter)
-                           merge_parts_to_flatgeobuf (streaming pyogrio append)
-  cli.py       argparse: download / convert / merge / all
+  config.py    pydantic-settings: URL、パス、sleep、タイムアウト、User-Agent
+  download.py  I/O:   冪等な httpx ダウンロード（既存はスキップ）
+  convert.py   変換:  normalize_roads / count_invalid_geometries / crs_epsg
+               I/O:   read_mesh_zip (/vsizip) -> メッシュ単位 GeoParquet
+  merge.py     変換:  find_cross_mesh_duplicates（純粋ヘルパー）
+               I/O:   merge_parts（ストリーミング ParquetWriter）
+                      merge_parts_to_flatgeobuf（ストリーミング pyogrio append）
+  load.py      変換:  validate_table_name / gist_index_sql（純粋ヘルパー）
+               I/O:   load_parts_to_postgis（ストリーミング to_postgis append）
+  cli.py       argparse: download / convert / merge / load / all
 ```
 
-### Streaming merge
+### ストリーミング結合
 
-`merge.py` does **not** load all parts into memory — at most one part is held
-at a time, for both formats:
+`merge.py` は全パートをメモリに載せ**ません** — どちらの形式でも、
+メモリ上に保持するパートは常に最大1つです:
 
-- **GeoParquet**: a single `pyarrow.parquet.ParquetWriter` using the **first
-  part's** Arrow schema (including its GeoParquet `geo` metadata) writes parts
-  one by one.
-- **FlatGeobuf**: parts are appended one by one via
-  `pyogrio.write_dataframe(..., append=True)`. Verified against pyogrio 0.13 /
-  GDAL 3.12: append works and the packed spatial index is present after
-  appends (`fast_spatial_filter` capability; bbox queries return correct
-  subsets).
+- **GeoParquet**: **最初のパート**の Arrow スキーマ（GeoParquet の `geo`
+  メタデータ含む）を使った単一の `pyarrow.parquet.ParquetWriter` で
+  パートを1つずつ書き込む。
+- **FlatGeobuf**: `pyogrio.write_dataframe(..., append=True)` でパートを
+  1つずつ追記する。pyogrio 0.13 / GDAL 3.12 で検証済み: append は動作し、
+  追記後もパック済み空間インデックスが保持される（`fast_spatial_filter`
+  ケーパビリティ。bbox クエリは正しい部分集合を返す）。
 
-This matters for the real "millions of features" case.
+これは実運用の「数百万フィーチャ」ケースで効いてきます。
 
-### Invalid geometries
+### 不正ジオメトリ
 
-`count_invalid_geometries` only **reports** missing / empty / invalid geometries
-(logged as a warning per mesh). It never repairs them, so source data is not
-silently altered. (The 3 default meshes report 0 invalid.)
+`count_invalid_geometries` は欠損・空・不正なジオメトリを**報告するだけ**
+です（メッシュごとに警告ログ）。修復は行わないため、元データが暗黙に
+書き換わることはありません。（デフォルトの3メッシュは不正0件。）
 
-## Known limitations
+## 既知の制限
 
-- **GeoParquet `bbox` metadata is from the first part only.** Because the
-  streaming writer reuses the first part's `geo` metadata, the merged file's
-  advertised bounding box covers just that first mesh — not the full extent.
-  The geometry data is correct (`gdf.total_bounds` is accurate); only the
-  metadata hint is narrow. Fixing this would require rewriting the `geo`
-  metadata after computing the union bbox, which is out of MVP scope.
-- **FlatGeobuf append cost can grow super-linearly.** GDAL's FGB append may
-  rebuild the file internally (spatial-index re-sort) on each append, so total
-  write cost can exceed O(total rows) when merging many parts. Fine at MVP
-  scale (a few parts); revisit before merging thousands of parts / tens of
-  millions of rows (e.g. write once from a single pass, or post-process with
-  `ogr2ogr`).
-- **No scraping.** Mesh URLs are hard-coded. A real pipeline would enumerate
-  meshes from the download page or the KSJ API.
-- **Cross-mesh de-duplication is detect-only.** `find_cross_mesh_duplicates`
-  flags identical geometries shared across meshes but the pipeline does not drop
-  them (N13 has no stable global feature id to dedupe on safely).
+- **GeoParquet の `bbox` メタデータは最初のパート由来のみ。** ストリーミング
+  writer が最初のパートの `geo` メタデータを使い回すため、結合ファイルが
+  宣言する bbox は最初のメッシュの範囲だけで、全体の範囲になりません。
+  ジオメトリデータ自体は正しく（`gdf.total_bounds` は正確）、メタデータの
+  ヒントが狭いだけです。修正には union bbox を計算して `geo` メタデータを
+  書き直す必要があり、MVP のスコープ外としています。
+- **FlatGeobuf の追記コストは線形以上に増えうる。** GDAL の FGB append は
+  追記のたびに内部でファイルを再構築（空間インデックスの再ソート）する
+  ことがあり、多数のパートを結合すると総書き込みコストが O(総行数) を
+  超えることがあります。MVP スケール（数パート）では問題なし。数千
+  パート／数千万行を結合する前に再検討してください（例: 1パスでまとめて
+  書く、`ogr2ogr` で後処理する）。
+- **スクレイピングなし。** メッシュ URL はハードコードです。実運用の
+  パイプラインならダウンロードページからメッシュを列挙するはずです。
+- **メッシュ跨ぎの重複は検出のみ。** `find_cross_mesh_duplicates` は
+  複数メッシュで共有される同一ジオメトリを検出しますが、パイプラインは
+  それらを削除しません（N13 には安全に重複排除できる安定したグローバル
+  フィーチャ ID がないため）。
 
 ## Docker
 
-`pyogrio` wheels bundle GDAL, so no OSGeo/GDAL base image is needed. The
-Dockerfile follows uv's current official pattern (copy the `uv` binary from
-`ghcr.io/astral-sh/uv`, cache-mounted `uv sync --locked`).
+`pyogrio` の wheel は GDAL を同梱しているため、OSGeo/GDAL ベースイメージは
+不要です。Dockerfile はマルチステージ構成（uv の現行公式パターン:
+`ghcr.io/astral-sh/uv` から `uv` バイナリをコピー、キャッシュマウント付き
+`uv sync --locked`）:
+
+| ステージ | 内容 | ビルド |
+| --- | --- | --- |
+| `runtime`（デフォルト） | パイプラインのみ、開発ツールなし | `docker build -t roadnet .` |
+| `test` | + pytest/ruff/mypy と `tests/`、`CMD pytest` | `docker build --target test -t roadnet-test .` |
 
 ```bash
 docker build -t roadnet .
 
-# Run the full pipeline, persisting data to a host directory:
+# パイプライン全体を実行し、データをホスト側ディレクトリに永続化:
 docker run --rm -v "$(pwd)/data:/app/data" roadnet all
 
-# Just one step:
+# 1ステップだけ:
 docker run --rm -v "$(pwd)/data:/app/data" roadnet download
+
+# テストスイートをコンテナ内で実行:
+docker build --target test -t roadnet-test .
+docker run --rm roadnet-test
 ```
 
-> Note: the Docker build was **not** verified in the authoring environment
-> (Docker daemon unavailable). The Dockerfile follows the documented uv pattern
-> but has not been built/run here.
+## PostGIS (docker compose)
 
-## Development
+`compose.yaml` は PostGIS 17 / 3.5 のデータベースとパイプラインイメージを
+起動します。
+
+> **開発専用の認証情報。** `compose.yaml` の `roadnet`/`roadnet` という
+> ユーザー・パスワード・データベース名は、ローカル開発用のハードコード
+> されたデフォルトです。この構成を localhost の外に公開したり、認証情報を
+> 他所で使い回したりしないでください。
+
+> 公式の `postgis/postgis` イメージは amd64 のみの公開で Apple Silicon
+> （arm64）版がないため、compose では `imresamu/postgis` を使っています —
+> 同じ docker-postgis プロジェクトのマルチアーキビルドで、環境変数も
+> 同一です。
 
 ```bash
-uv run pytest        # 12 tests, network-free (synthetic GeoDataFrames)
+docker compose up -d postgis            # DB 起動（名前付きボリューム `pgdata` にデータ永続化）
+docker compose run --rm pipeline load   # data/parts/*.parquet をテーブル `roads` にストリーム投入
+docker compose exec postgis psql -U roadnet -d roadnet \
+  -c "SELECT count(*) FROM roads;" \
+  -c "SELECT Find_SRID('public','roads','geometry');"
+docker compose down                     # 停止。ボリュームは残る（`-v` を付けると削除）
+```
+
+`roadnet load` は `GeoDataFrame.to_postgis`（SQLAlchemy 2 + psycopg 3 +
+GeoAlchemy2）でパートを1つずつストリーム投入します: 最初のパートで
+テーブルを置き換えるため再実行しても冪等、残りは追記、最後にジオメトリ
+カラムへ GIST インデックスを作成します。SRID 6668 はパートから引き継がれ
+ます。
+
+接続設定は `ROADNET_DATABASE_URL` から読みます。デフォルトは compose の
+サービス（`@postgis:5432`）を指します。ホスト側から `load` を実行する
+場合は:
+
+```bash
+ROADNET_DATABASE_URL=postgresql+psycopg://roadnet:roadnet@localhost:5432/roadnet \
+  uv run roadnet load
+```
+
+## 開発
+
+```bash
+uv run pytest        # 22テスト。ネットワーク・DB 不要（合成 GeoDataFrame を使用）
 uv run ruff check .
 uv run mypy src tests
 ```
