@@ -1,0 +1,45 @@
+# 開発用 compose: PostGIS + パイプラインランナー。
+#
+# 下記の認証情報は「開発専用」のデフォルト（localhost 利用前提）。
+# インターネットから到達可能な環境では絶対に使い回さないこと。
+#
+# 使い方:
+#   docker compose up -d postgis          # データベースを起動
+#   docker compose run --rm pipeline load # data/parts を PostGIS にストリーム投入
+#   docker compose exec postgis psql -U roadnet -d roadnet -c "SELECT count(*) FROM roads;"
+#   docker compose down                   # 停止（名前付きボリューム `pgdata` は残る）
+
+services:
+  postgis:
+    # docker-postgis のマルチアーキビルド（公式の postgis/postgis は amd64 のみで
+    # Apple Silicon 向け arm64 がない。2026-07-11 確認）。環境変数・構成は公式
+    # イメージと同一。PG17 系列の最新は 3.5。
+    image: imresamu/postgis:17-3.5
+    environment:
+      POSTGRES_USER: roadnet
+      POSTGRES_PASSWORD: roadnet
+      POSTGRES_DB: roadnet
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U roadnet -d roadnet"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+
+  pipeline:
+    build: .
+    depends_on:
+      postgis:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+    # イメージのデフォルト（config.py）も `postgis` サービスを指しているが、
+    # 配線が1か所で見えるようにここでも明示している。
+    environment:
+      ROADNET_DATABASE_URL: postgresql+psycopg://roadnet:roadnet@postgis:5432/roadnet
+
+volumes:
+  pgdata:

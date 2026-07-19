@@ -13,7 +13,8 @@
 #
 # pyogrio の wheel は GDAL を同梱しているため、OSGeo/GDAL ベースイメージは不要。
 
-FROM python:3.12-slim-bookworm
+# --------------------------------------------------------------------------- #
+FROM python:3.12-slim-bookworm AS base
 
 # Astral の distroless イメージから uv バイナリをコピー（バージョン固定）。
 COPY --from=ghcr.io/astral-sh/uv:0.11.3 /uv /uvx /bin/
@@ -30,7 +31,27 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     uv sync --locked --no-install-project --no-dev
 
-# 2) Copy the project source and install the package itself.
+# --------------------------------------------------------------------------- #
+FROM base AS test
+
+# 実行時依存の上に dev グループ（pytest, ruff, mypy）を追加する。
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=uv.lock,target=uv.lock \
+    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+    uv sync --locked --no-install-project
+
+COPY . /app
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked
+
+ENV PATH="/app/.venv/bin:$PATH"
+
+CMD ["pytest", "-v"]
+
+# --------------------------------------------------------------------------- #
+# 最終ステージ: デフォルトのビルドターゲット（--target なしでは最後のステージが選ばれる）。
+FROM base AS runtime
+
 COPY . /app
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev

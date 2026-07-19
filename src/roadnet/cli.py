@@ -16,6 +16,7 @@ from pathlib import Path
 from .config import Settings, get_settings
 from .convert import convert_all
 from .download import download_all
+from .load import load_parts_to_postgis
 from .merge import merge_parts, merge_parts_to_flatgeobuf
 
 
@@ -58,9 +59,20 @@ def cmd_merge(settings: Settings) -> None:
     if total_pq != total_fgb:
         logging.error(
             "merge: row count mismatch between outputs (parquet=%d, fgb=%d)",
-            total_pq, total_fgb,
+            total_pq,
+            total_fgb,
         )
         raise SystemExit(1)
+
+
+def cmd_load(settings: Settings) -> None:
+    settings.ensure_dirs()
+    parts = _sorted_paths(settings.parts_dir, "*.parquet")
+    if not parts:
+        logging.error("load: no parts in %s — run `convert` first", settings.parts_dir)
+        raise SystemExit(1)
+    total = load_parts_to_postgis(parts, settings.database_url, settings.roads_table)
+    logging.info("load: %d feature(s) -> table %s", total, settings.roads_table)
 
 
 def cmd_all(settings: Settings) -> None:
@@ -92,6 +104,7 @@ _COMMANDS = {
     "download": cmd_download,
     "convert": cmd_convert,
     "merge": cmd_merge,
+    "load": cmd_load,
     "all": cmd_all,
 }
 

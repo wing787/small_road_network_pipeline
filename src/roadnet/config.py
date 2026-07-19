@@ -50,11 +50,14 @@ class Settings(BaseSettings):
     # --- PostGIS（開発専用の認証情報。compose.yaml / README 参照） ---
     # デフォルトの DSN は compose のサービス名 `postgis` を指す。ホストからは:
     # ROADNET_DATABASE_URL=postgresql+psycopg://roadnet:roadnet@localhost:5432/roadnet
+    database_url: str = "postgresql+psycopg://roadnet:roadnet@postgis:5432/roadnet"
+    roads_table: str = "roads"
+
+    # --- ネットワークマナー（配布元への配慮） ---
     sleep_seconds: float = 2.0
     timeout_seconds: float = 60.0
     user_agent: str = (
-        "small-road-network-pipeline/0.1 "
-        "(portfolio learning project; +https://nlftp.mlit.go.jp)"
+        "small-road-network-pipeline/0.1 (portfolio learning project; +https://nlftp.mlit.go.jp)"
     )
 
     @property
