@@ -1,0 +1,23 @@
+# push時にruff + mypy + pytestが走れるようにする
+# 参照先: GitHub Actions 公式ドキュメントの workflow syntax（https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax）、　
+# uv 公式ドキュメントの「GitHub Actions 連携」ページ（astral-sh/setup-uv）https://docs.astral.sh/uv/guides/integration/github/
+name: hogehoge
+
+on: push
+
+jobs:
+  uv-env-create:
+    name: python
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: "Set up Python"
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: ".python-version"
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+      - run: uv sync --locked
+      - run: uv run pytest
+      - run: uv run ruff check .
+      - run: uv run mypy src tests
