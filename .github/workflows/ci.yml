@@ -1,7 +1,7 @@
 # push時にruff + mypy + pytestが走れるようにする
 # 参照先: GitHub Actions 公式ドキュメントの workflow syntax（https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax）、　
 # uv 公式ドキュメントの「GitHub Actions 連携」ページ（astral-sh/setup-uv）https://docs.astral.sh/uv/guides/integration/github/
-name: hogehoge
+name: Tests
 
 on: push
 
