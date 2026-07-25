@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     # ROADNET_DATABASE_URL=postgresql+psycopg://roadnet:roadnet@localhost:5432/roadnet
     database_url: str = "postgresql+psycopg://roadnet:roadnet@postgis:5432/roadnet"
     roads_table: str = "roads"
+    staging_table:str = "roads_stage"
 
     # --- ネットワークマナー（配布元への配慮） ---
     sleep_seconds: float = 2.0

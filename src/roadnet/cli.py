@@ -1,4 +1,4 @@
-"""コマンドラインエントリポイント: download / convert / merge / load / all。
+"""コマンドラインエントリポイント: download / convert / merge / load / all / transform。
 
 各層モジュールの薄いオーケストレーション。各サブコマンドは冪等で、単独でも
 実行できる。``load`` は到達可能な PostGIS（compose.yaml 参照）を必要とする
@@ -18,6 +18,7 @@ from .convert import convert_all
 from .download import download_all
 from .load import load_parts_to_postgis
 from .merge import merge_parts, merge_parts_to_flatgeobuf
+from .transform import transform
 
 
 def _sorted_paths(directory: Path, pattern: str) -> list[Path]:
@@ -71,7 +72,13 @@ def cmd_load(settings: Settings) -> None:
     if not parts:
         logging.error("load: no parts in %s — run `convert` first", settings.parts_dir)
         raise SystemExit(1)
-    total = load_parts_to_postgis(parts, settings.database_url, settings.roads_table)
+    total = load_parts_to_postgis(parts, settings.database_url, settings.staging_table)
+    logging.info("load: %d feature(s) -> table %s", total, settings.staging_table)
+
+
+def cmd_transform(settings: Settings) -> None:
+    settings.ensure_dirs()
+    total = transform(settings.database_url, settings.roads_table)
     logging.info("load: %d feature(s) -> table %s", total, settings.roads_table)
 
 
@@ -79,6 +86,7 @@ def cmd_all(settings: Settings) -> None:
     cmd_download(settings)
     cmd_convert(settings)
     cmd_merge(settings)
+    cmd_transform(settings)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -97,6 +105,10 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("merge", help="パートを GeoParquet + FlatGeobuf にストリーム結合する。")
     sub.add_parser("load", help="パートを PostGIS にストリーム投入する（DB の起動が必要）。")
     sub.add_parser("all", help="download -> convert -> merge を実行する。")
+    sub.add_parser(
+        "transform",
+        help="PostGISのstagingテーブルに投入した生データに対して、投影法やデータ型を変換し"
+        "DB内の本番用DBに投入する")
     return parser
 
 
@@ -106,6 +118,7 @@ _COMMANDS = {
     "merge": cmd_merge,
     "load": cmd_load,
     "all": cmd_all,
+    "transform": cmd_transform,
 }
 
 
