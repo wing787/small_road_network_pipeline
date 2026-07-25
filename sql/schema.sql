@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS postgis;
+
 -- コードテーブル
 -- 種別（N13_002）
 CREATE TABLE IF NOT EXISTS road_type (
