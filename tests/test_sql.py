@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from roadnet.load import gist_index_sql, validate_table_name
+from roadnet._sql import gist_index_sql, validate_table_name
 
 
 def test_validate_table_name_accepts_safe_identifiers() -> None:
