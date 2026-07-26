@@ -79,7 +79,7 @@ def cmd_load(settings: Settings) -> None:
 def cmd_transform(settings: Settings) -> None:
     settings.ensure_dirs()
     total = transform(settings.database_url, settings.roads_table)
-    logging.info("load: %d feature(s) -> table %s", total, settings.roads_table)
+    logging.info("transform: %d feature(s) -> table %s", total, settings.roads_table)
 
 
 def cmd_all(settings: Settings) -> None:
