@@ -1,14 +1,17 @@
-"""ロード層: メッシュ単位の GeoParquet パートを PostGIS テーブルにストリーム投入する。
+"""ロード層: メッシュ単位の GeoParquet パートを PostGIS のステージングテーブルへ
+ストリーム投入する。
 
 ストリーミング原則（merge.py と同じ）: パートは ``GeoDataFrame.to_postgis``
-で1つずつ読み書きし、データセット全体をメモリに載せない。最初のパートで
-対象テーブルを*置き換える*ため、再実行しても二重投入されない（冪等）。
-以降のパートは追記。ロード完了後にジオメトリカラムへ GIST インデックスを
-作成する。
+で1つずつ読み書きし、データセット全体をメモリに載せない。投入前に対象テーブルを
+``TRUNCATE`` してから全パートを ``if_exists="append"`` で追記するため、再実行
+しても二重投入されない（冪等）。``if_exists="replace"`` は使わない（テーブルを
+DROP して gdf 推論スキーマで作り直してしまい、schema.sql で設計した
+ステージングテーブルを破壊するため）。
 
-純粋なヘルパー（``validate_table_name``、``gist_index_sql``）は I/O を持たず、
-データベースなしでユニットテストされる。このリポジトリのテストは PostGIS の
-起動を一切必要としない。
+投入先は緩いステージングテーブル（``roads_stage``）で、型変換・CRS変換・制約は
+後段の ``transform`` が担う。純粋なヘルパー（``validate_table_name``）は I/O を
+持たず、データベースなしでユニットテストされる。このリポジトリのテストは
+PostGIS の起動を一切必要としない。
 """
 
 from __future__ import annotations
@@ -29,11 +32,12 @@ logger = logging.getLogger(__name__)
 # I/O                                                                         #
 # --------------------------------------------------------------------------- #
 def load_parts_to_postgis(part_paths: list[Path], database_url: str, table: str) -> int:
-    """parquet パートを PostGIS にストリーム投入する。総ロード行数を返す。
+    """parquet パートを PostGIS のステージングテーブルへストリーム投入する。
+    総ロード行数を返す。
     """
-    # 最初のパートは ``if_exists="replace"`` で書き（再実行の冪等性）、残りは
-    # ``append``。最後にジオメトリカラムへ GIST インデックスを作成する。
-    
+    # 冪等性: 投入前に一度 ``TRUNCATE`` し、全パートを ``append`` で追記する。
+    # 型変換・CRS変換・GIST インデックスは後段の ``transform`` が担う。
+
     if not part_paths:
         raise ValueError("No parts to load.")
     validate_table_name(table)
