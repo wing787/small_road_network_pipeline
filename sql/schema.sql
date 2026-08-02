@@ -61,6 +61,9 @@ INSERT INTO toll_category (code, label)
     DO UPDATE SET 
     label = EXCLUDED.label;
 
+-- 市区町村ポリゴン（N03-2026）
+-- load_admin_area.pyにて元データの読み込み＆DDLの作成を担っている
+
 -- for staging
 CREATE TABLE IF NOT EXISTS roads_stage (
     road_type TEXT,
