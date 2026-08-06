@@ -17,3 +17,6 @@ data/
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
+
+# DuckDB local experiment DBs (large binaries, reproducible)
+*.duckdb
