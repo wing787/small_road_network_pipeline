@@ -75,6 +75,55 @@ CRS が度(4326/6668)なので、長さは球面/楕円体で測る必要があ�
 
 数百万件規模ではどちらも1台で十分。**分散処理(M6)を持ち出す前に、この2つで足りるかをまず疑うべき**。
 
+## S3 直読 + Range GET — 転送量で選ぶ(M3 タスク1)
+
+上記はローカルの parquet 直読。ここでは同じ GeoParquet を **S3 に置き、DuckDB(httpfs)で
+`s3://` 直読**し、「1クエリで**実際に何バイト転送するか**」を測った。クラウドでは転送量が
+そのまま **egress コストと待ち時間**になるため、速度より**転送量**が効く。
+
+- 計測: `CALL enable_logging('HTTP')` → `duckdb_logs` の GET 応答 `Content-Length` を合算
+  (`scripts/measure_s3_transfer.py`。解析ロジックは `roadnet.http_stats` に分離してテスト済み)。
+- 認証: private バケット + `CREATE SECRET (TYPE S3, PROVIDER credential_chain)`(鍵をSQLに書かない)。
+
+### 転送量スペクトル(素の parquet, 93.7MB)
+
+| 問い | 結果 | 転送量 | 対ファイル |
+|---|---|---|---|
+| `count(*)` 全件 | 1,944,690 | **0.13 MB** | **0.1%** |
+| `road_type` 別 `count` | 4 | 0.32 MB | 0.3% |
+| bbox内 `count`(`ST_Intersects`) | 10,172 | **92.61 MB** | **98.8%** |
+
+- **Range GET は s3:// でも効く**: 全件 count が 93.7MB 中 **0.13MB** しか引かない
+  (`PartialContent_206`)。footer とメタデータだけ読み、行数はメタから答える。
+- **列を絞れば桁で減る**(縦=列プロジェクション)。geometry(WKB)の巨大列を触らない
+  `road_type` 集計は 0.3%。**S3 では列指向 + Range が egress を桁で削る**。
+- **bbox 検索はほぼ全転送**(98.8%)。geometry が要る上、bbox covering 列が無く行グループを
+  刈れない ← ローカルの問い3と同じ構造が、S3 では「金額」として牙を剥く。
+
+### 改善: bbox covering + 空間ソート、ただしクエリの書き方が要る
+
+素の parquet を **Hilbert 空間ソート + `write_covering_bbox=True` + 20 行グループ**で書き直し
+(`scripts/write_bbox_covering_parquet.py`)、同じ bbox 検索(答えは同じ 10,172件)を測った:
+
+| 版・クエリ | 転送量 | 判定 |
+|---|---|---|
+| 素の版 + `ST_Intersects` | 92.61 MB | covering 無し → 刈れない |
+| covering版 + `ST_Intersects`(素) | 87.74 MB | **DuckDB 1.5.5 は自動押下しない → 刈れない** |
+| covering版 + **bbox 列述語のみ** | **5.81 MB** | 候補=10,172。行グループ刈れた |
+| covering版 + **bbox 列述語 AND `ST_Intersects`** | **12.41 MB** | 正確=10,172。実用パターン |
+
+bbox 列述語 = `bbox.xmin<=x1 AND bbox.xmax>=x0 AND bbox.ymin<=y1 AND bbox.ymax>=y0`。
+
+- **データを刈れる形にしても、DuckDB は `ST_Intersects` を covering 統計へ自動では
+  押し下げない**(covering版でも naive クエリは 87.74MB=全行グループ走査)。
+- **bbox 列述語を自分で書くと初めて刈れる**: 92.6MB → **12.4MB(約7.5倍減、同じ答え)**。
+  前半の bbox 述語が行グループを統計で安く刈り、後半の `ST_Intersects` が生き残りを正確判定。
+- ここでも **「割合ではなく絶対バイトを見る」**: covering版 naive は割合 60.8% で一見改善に
+  見えるが、ファイルが 144MB に膨れた分母マジック。**絶対量は 92.6→87.7MB とほぼ横ばい**。
+
+**まとめ(S3)**: 転送量＝コストは **①ファイルレイアウト(空間ソート+covering)** と
+**②クエリの書き方(bbox 述語を明示)** の**両方**が揃って初めて下がる。片方でも欠ければ全転送。
+
 ## 教訓(ハマった罠)
 
 ### 1. 「基準値に近い ≠ 正しい」— 座標順の偽陽性
@@ -119,4 +168,12 @@ uv run python -c "import duckdb; con=duckdb.connect('data/roads.duckdb'); \
   con.execute('INSTALL spatial;LOAD spatial;'); \
   print(con.execute(open('sql/bench_bbox_duckdb_rtree.sql').read()).fetchall()[0][1])"
 # 索引が使われる証拠は EXPLAIN(plain) の RTREE_INDEX_SCAN で見る(ANALYZE は TABLE_SCAN と誤表示)
+
+# --- S3 直読の転送量(要 aws sso login。private バケット + credential_chain) ---
+uv run python scripts/measure_s3_transfer.py --s3-url s3://<bucket>/roads/roads_all.parquet
+# covering + 空間ソート版を作って再測定(bbox 述語 probe 込み)
+uv run python scripts/write_bbox_covering_parquet.py
+aws s3 cp data/output/roads_all_bbox.parquet s3://<bucket>/roads/roads_all_bbox.parquet
+uv run python scripts/measure_s3_transfer.py \
+  --s3-url s3://<bucket>/roads/roads_all_bbox.parquet --bbox-covering
 ```
