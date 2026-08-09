@@ -8,6 +8,24 @@ GeoParquet 1ファイルにまとめる、**動く最小構成**のデータパ�
 してあります: 対象メッシュの URL はハードコード（スクレイピングなし）で、
 デフォルトでは小さな3メッシュのみを処理します。
 
+> **姉妹リポジトリ: [cog_stac_lab](https://github.com/wing787/cog_stac_lab)（ラスター側）**
+>
+> クラウド上の地理データを部分的に読む仕組みは、ベクターもラスターも土台は
+> **HTTP Range GET** で同じ。違うのは「何を最小単位に刈るか」だけ。
+>
+> | | 本リポジトリ（GeoParquet） | cog_stac_lab（COG） |
+> | --- | --- | --- |
+> | 刈る最小単位 | row-group | 内部タイル |
+> | 統計・索引 | bbox covering 列 + min/max | IFD のタイルオフセット表 |
+> | 配置の前処理 | 空間ソート（Hilbert） | タイル化 |
+> | 解像度軸 | なし | overview |
+> | 効かせる条件 | bbox 列述語を**明示的に書く** | 既定オプションを**疑って調整する** |
+>
+> 両者に共通する結論は
+> **「転送量はファイルレイアウトとクエリの書き方の両方が揃って初めて下がる」**。
+> 実測は [docs/postgis-vs-duckdb.md](docs/postgis-vs-duckdb.md) の S3 節と、
+> cog_stac_lab の [docs/cog-partial-read.md](https://github.com/wing787/cog_stac_lab/blob/main/docs/cog-partial-read.md)。
+
 ## データ出典
 
 > 「国土数値情報（道路データ N13-2024）」（国土交通省）
